@@ -1,0 +1,15 @@
+[tool.poetry]
+name = "quic-graphlasso"
+version = "0.1.0"
+description = ""
+authors = ["r-trimbour <trimbour@edu.bio.ens.psl.eu>"]
+readme = "README.md"
+packages = [{include = "quic_graphlasso"}]
+
+[tool.poetry.dependencies]
+python = "^3.10"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

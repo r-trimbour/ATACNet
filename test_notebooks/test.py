@@ -342,18 +342,112 @@ def global_sparse(AnnData, chr_idx, values = 1):
     # Return correlation coefficients
     return corr_coefs
 
+def sliding_graphical_lasso(AnnData,
+                            scores,
+                            penalties,
+                            window_size,
+                            ):
+    """
+    Extract sliding submatrix from a sparse correlation matrix.
+    """
+    start_slidings = [0, window_size/2]
 
+    results = {}
+    results['scores'] = np.array([])
+    results['idx'] = np.array([])
+    results['idy'] = np.array([])
 
+    regions_list = AnnData.var_names
+    # Get global indices of regions
+    map_indices = {regions_list[i]: i for i in range(len(regions_list))}
 
+    for k in start_slidings:
+        for chromosome in AnnData.var['chromsome'].unique():
+            # Get start positions of windows
+            window_starts = [i for i in range(k,
+                                              AnnData.var['end']
+                                              [AnnData.var['chromosome']
+                                                  == chromosome].max(),
+                                              window_size)]
 
+            for start in window_starts:
+                end = start + window_size
+                # Get global indices of regions in the window
+                idx = np.where((AnnData.var['chromosome'] == chromosome)
+                            & (AnnData.var['start'] >= start)
+                            & (AnnData.var['start'] <= end))[0]
 
+                # already global ?
+                ## Get global indices of regions in the window
+                #idx = [map_indices[i] for i in regions_list[idx]]
 
+                # Get submatrix
+                window_scores = sp.sparse.csr_matrix(scores)[idx, :][:, idx]
+                window_scores = window_scores.todense()+window_scores.T.toarray()
 
+                window_penalties = sp.sparse.csr_matrix(penalties)[idx, :][:, idx]
+                window_penalties = window_penalties.todense()+window_penalties.T.toarray()
 
+                # Initiating graphical lasso
+                graph_lasso_model = quic_graph_lasso.QuicGraphicalLasso(init_method='precomputed', lam=window_penalties)
 
+                # Fit graphical lasso
+                graph_lasso_model.fit(window_scores)
 
+                # Names of regions in the window
+                window_region_names = AnnData.var_names[idx]
 
+                # convert to sparse matrix the results
+                corrected_scores = sp.sparse.coo_matrix(graph_lasso_model.covariance_)
 
+                # Convert corrected_scores column and row indices to global indices
+                idx = [map_indices[name]
+                    for name in window_region_names[corrected_scores.row]]
+                idy = [map_indices[name]
+                    for name in window_region_names[corrected_scores.col]]
 
+                # Add the "sub" resuls to the global sparse matrix
+                results['scores'] = np.concatenate([results['scores'],
+                                                            corrected_scores.data])
+                results['idx'] = np.concatenate([results['idx'],
+                                                idx])
+                results['idy'] = np.concatenate([results['idy'],
+                                                idy])
 
+            # Create sparse matrix
+            results['window_' + str(k)] = sp.sparse.coo_matrix((results['scores'],
+                                            (results['idx'],
+                                            results['idy'])),
+                                            shape=(len(window_region_names),
+                                                   len(window_region_names)))
 
+    sliding_keys = ['window_' + str(k) for k in start_slidings]
+
+    positive_coords = []
+    negative_coords = []
+    for k in sliding_keys:
+        positive_coords.append({(x, y) for x, y, d in zip(results[k].row,
+                                                          results[k].col,
+                                                          results[k].data)
+                                if d >= 0})
+        negative_coords.append({(x, y) for x, y, d in zip(results[k].row,
+                                                          results[k].col,
+                                                          results[k].data)
+                                if d <= 0})
+
+    # Get coordinates intersection
+    positive_coords = set.intersection(*positive_coords)
+    negative_coords = set.intersection(*negative_coords)
+
+    coords = pd.DataFrame(set.union((negative_coords, positive_coords)),
+                          columns=['row', 'col'])
+
+    # Get average of positive and negative coordinates
+    average = sp.sparse.csr_matrix(sliding_keys[0])[coords['row'],
+                                                    coords['col']]
+    for k in sliding_keys[1:]:
+        average += sp.sparse.csr_matrix(sliding_keys[0])[coords['row'],
+                                                         coords['col']]
+    average /= len(sliding_keys)
+
+    return average
