@@ -214,7 +214,7 @@ def corrcoef_connections(AnnData, potential_connections, as_sparse=True):
     return corr_coefs
 
 
-def global_sparse(AnnData, chr_idx, values = 1):
+def global_sparse(AnnData, chr_idx, values=1):
     """
     Create a sparse matrix from a dictionary of np.where output on 'regions*regions' matrices.of different chromosomes.
     using global indices of an AnnData object.
@@ -341,6 +341,7 @@ def global_sparse(AnnData, chr_idx, values = 1):
         pass
     # Return correlation coefficients
     return corr_coefs
+
 
 def sliding_graphical_lasso(AnnData,
                             scores,
